@@ -1,0 +1,248 @@
+
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <title>elevator</title>
+</head>
+<body>
+    <div class="container">
+        <video playsinline autoplay class="input_video"></video>
+        <canvas class="output_canvas"></canvas>
+        <div class="control-panel"></div>
+    </div>
+</body>
+</html>
+
+<script type="module">
+    const videoElement = document.getElementsByClassName('input_video')[0];
+    const canvasElement = document.getElementsByClassName('output_canvas')[0];
+    const controlsElement = document.getElementsByClassName('control-panel')[0];
+    const dpr = window.devicePixelRatio; //detect HiDPI ratio on everytime calling this func
+    const w = canvasElement.getBoundingClientRect().width; //get current css_size
+    const h = canvasElement.getBoundingClientRect().height; //get current css_size
+    canvasElement.width = w * dpr; //set canvas_size as css_size
+    canvasElement.height = h * dpr; //set canvas_size as css_size
+    const canvasCtx = canvasElement.getContext('2d');
+    canvasCtx.scale(dpr, dpr); //adapt HiDPI
+
+
+    const fpsControl = new FPS();
+
+    function onResults(results) {
+        fpsControl.tick();
+        canvasCtx.save();
+        canvasCtx.clearRect(0, 0, w, h);
+        canvasCtx.drawImage(results.image, 0, 0, w, h);
+        if (results.multiHandLandmarks) {
+            for (const landmarks of results.multiHandLandmarks) {
+                // drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {
+                //     color: '#00FF00',
+                //     lineWidth: 5
+                // });
+                // drawLandmarks(canvasCtx, landmarks, {
+                //     color: '#FF0000',
+                //     lineWidth: 2
+                // });
+
+                //食指指尖
+                const posX = landmarks[8].x*w;
+                const posY = landmarks[8].y*h;
+                canvasCtx.fillStyle = "red";
+                canvasCtx.beginPath();
+                canvasCtx.arc(posX, posY, 10, 0, 2 * Math.PI, true);
+                canvasCtx.fill();
+            }
+        }
+        canvasCtx.restore();
+    }
+
+    const hands = new Hands({
+        locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+        }
+    });
+
+    // hands.setOptions({
+    //     maxNumHands: 1,
+    //     modelComplexity: 0,
+    //     minDetectionConfidence: 0.5,
+    //     minTrackingConfidence: 0.5
+    // });
+
+    hands.onResults(onResults);
+
+    const camera = new Camera(videoElement, {
+        onFrame: async () => {
+            await hands.send({
+                image: videoElement
+            });
+        },
+        width: w,
+        height: h
+    });
+    camera.start();
+
+    // Present a control panel through which the user can manipulate the solution
+    // options.
+    new ControlPanel(controlsElement, {
+        useCpuInference: false,
+        selfieMode: true,
+        maxNumHands: 2,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.7,
+        minTrackingConfidence: 0.7
+    })
+    .add([
+        fpsControl
+    ])
+    .on(options => {
+        hands.setOptions(options);
+    });
+
+    /* capture camera manually upto 60fps */
+    //async function callMe() {
+    //     await hands.send({ image: videoElement });
+    //     requestAnimationFrame(callMe.bind(this));
+    // };
+    // navigator.mediaDevices.getUserMedia({ audio: false, video: { width: w, height: h, facingMode: "user" } })
+    // .then(stream => {
+    //     videoElement.srcObject = stream;
+    //     videoElement.onloadedmetadata = () => {
+    //         videoElement.play();
+    //         callMe();
+    //     };
+    // })
+    // .catch(e => console.log(e));
+</script>
+<style>
+    body {
+        color: white;
+    }
+    .container {
+        position: relative;
+    }
+
+    .input_video {
+        display: none;
+        border: cadetblue 2px solid;
+    }
+
+    .output_canvas {
+        width: 1280px;
+        height: 720px;
+        border: black 2px solid;
+    }
+
+    .control-panel {
+        position: absolute;
+        left: 10px;
+        top: 10px;
+    }
+
+    .control-panel-entry {
+        width: 250px;
+        background-color: #8d8d8d;
+        border: 2px solid #fff;
+        border-radius: 15px;
+        box-shadow: 1px 1px 10px #000000a0;
+        cursor: pointer;
+        font-family: "Titillium Web", sans-serif;
+        font-size: 15px;
+        line-height: 25px;
+        opacity: .8;
+        padding: 5px 25px;
+        position: relative;
+        z-index: 100
+    }
+
+    .control-panel-text {
+        cursor: default;
+        font-size: 20px;
+        font-weight: 600;
+        text-align: center
+    }
+
+    .control-panel-toggle .label {
+        position: relative
+    }
+
+    .control-panel-toggle .value {
+        position: absolute;
+        right: 25px
+    }
+
+    .control-panel-toggle.yes {
+        background-color: #398c39
+    }
+
+    .control-panel-toggle.no {
+        background-color: #f92c2c
+    }
+
+    .control-panel-toggle.yes .value {
+        color: #a3faa3
+    }
+
+    .control-panel-toggle.no .value {
+        color: #f19e9e
+    }
+
+    .control-panel-slider .value {
+        position: relative;
+        width: 100%
+    }
+
+    .control-panel-slider .callout {
+        position: absolute;
+        right: 25px
+    }
+
+    .control-panel-fps {
+        display: flex;
+        justify-content: center;
+        align-items: center
+    }
+
+    .control-panel-fps canvas {
+        height: 50px;
+        width: 100%;
+        background-color: #222;
+        border-radius: 10px;
+        margin-top: 5px
+    }
+
+    .control-panel-fps .fps-text {
+        position: absolute;
+        font-size: 20px;
+        font-weight: 600;
+        text-align: center;
+        backface-visibility: hidden
+    }
+
+    .fps-30 {
+        position: absolute;
+        font-size: 8px;
+        top: 45%;
+        left: 10px
+    }
+
+    .fps-60 {
+        position: absolute;
+        font-size: 8px;
+        top: 15%;
+        left: 10px
+    }
+
+    @media screen and (max-width: 480px) {
+        .output_canvas {
+            width: 100%;
+            height: 70vh;
+        }
+    }
+</style>
