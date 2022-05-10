@@ -1,22 +1,27 @@
-
 <!DOCTYPE html>
 <html lang="zh">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous">
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous">
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-    <title>elevator</title>
+    <title>biodesign-elevator</title>
 </head>
+
 <body>
     <div class="container">
         <video playsinline autoplay class="input_video"></video>
         <canvas class="output_canvas"></canvas>
         <div class="control-panel"></div>
+        <div id="number"></div>
     </div>
 </body>
+
 </html>
 
 <script type="module">
@@ -30,7 +35,10 @@
     canvasElement.height = h * dpr; //set canvas_size as css_size
     const canvasCtx = canvasElement.getContext('2d');
     canvasCtx.scale(dpr, dpr); //adapt HiDPI
+    const numberDiv = document.getElementById('number')
 
+    let angle_list = []
+    
 
     const fpsControl = new FPS();
 
@@ -41,6 +49,7 @@
         canvasCtx.drawImage(results.image, 0, 0, w, h);
         if (results.multiHandLandmarks) {
             for (const landmarks of results.multiHandLandmarks) {
+                /* 全部關節 */
                 // drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {
                 //     color: '#00FF00',
                 //     lineWidth: 5
@@ -50,13 +59,28 @@
                 //     lineWidth: 2
                 // });
 
-                //食指指尖
-                const posX = landmarks[8].x*w;
-                const posY = landmarks[8].y*h;
-                canvasCtx.fillStyle = "red";
-                canvasCtx.beginPath();
-                canvasCtx.arc(posX, posY, 10, 0, 2 * Math.PI, true);
-                canvasCtx.fill();
+                /* 食指指尖 */
+                // const posX = landmarks[8].x*w;
+                // const posY = landmarks[8].y*h;
+                // canvasCtx.fillStyle = "red";
+                // canvasCtx.beginPath();
+                // canvasCtx.arc(posX, posY, 10, 0, 2 * Math.PI, true);
+                // canvasCtx.fill();
+
+                /* 手關節角度 */
+                let keypoint_pos = []
+                for (let i = 0; i < 21; ++i) {
+                    const posX = landmarks[i].x*w;
+                    const posY = landmarks[i].y*h;
+                    keypoint_pos.push([posX, posY])
+                }
+                angle_list = hand_angle(keypoint_pos)
+                setTimeout(() => {
+                    let gesture = hand_gesture(angle_list)
+                    console.log(gesture)
+                    numberDiv.innerHTML = gesture
+                }, "1500")
+                
             }
         }
         canvasCtx.restore();
@@ -67,26 +91,24 @@
             return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
         }
     });
-
     // hands.setOptions({
     //     maxNumHands: 1,
     //     modelComplexity: 0,
     //     minDetectionConfidence: 0.5,
     //     minTrackingConfidence: 0.5
     // });
-
     hands.onResults(onResults);
 
-    const camera = new Camera(videoElement, {
-        onFrame: async () => {
-            await hands.send({
-                image: videoElement
-            });
-        },
-        width: w,
-        height: h
-    });
-    camera.start();
+    // const camera = new Camera(videoElement, {
+    //     onFrame: async () => {
+    //         await hands.send({
+    //             image: videoElement
+    //         });
+    //     },
+    //     width: w,
+    //     height: h
+    // });
+    // camera.start();
 
     // Present a control panel through which the user can manipulate the solution
     // options.
@@ -106,24 +128,143 @@
     });
 
     /* capture camera manually upto 60fps */
-    //async function callMe() {
-    //     await hands.send({ image: videoElement });
-    //     requestAnimationFrame(callMe.bind(this));
-    // };
-    // navigator.mediaDevices.getUserMedia({ audio: false, video: { width: w, height: h, facingMode: "user" } })
-    // .then(stream => {
-    //     videoElement.srcObject = stream;
-    //     videoElement.onloadedmetadata = () => {
-    //         videoElement.play();
-    //         callMe();
-    //     };
-    // })
-    // .catch(e => console.log(e));
+    async function callMe() {
+        await hands.send({ image: videoElement });
+        requestAnimationFrame(callMe.bind(this));
+    };
+    navigator.mediaDevices.getUserMedia({ audio: false, video: { width: w, height: h, facingMode: "user" } })
+    .then(stream => {
+        videoElement.srcObject = stream;
+        videoElement.onloadedmetadata = () => {
+            videoElement.play();
+            callMe();
+        };
+    })
+    .catch(e => console.log(e));
+
+    Math.degrees = function(radians) {
+        return radians * 180 / Math.PI;
+    }
+
+    function vector_2d_angle(v1, v2) {
+        const v1_x = v1[0]
+        const v1_y = v1[1]
+        const v2_x = v2[0]
+        const v2_y = v2[1]
+        try {
+            return Math.degrees(Math.acos((v1_x*v2_x+v1_y*v2_y)/(((v1_x**2+v1_y**2)**0.5)*((v2_x**2+v2_y**2)**0.5))))
+        } catch (e) {
+            return 100000.
+        }
+    }
+
+    function hand_angle(hand_) {
+        let angle_list = []
+        let angle_ = 0
+        //#---------------------------- thumb 大拇指角度
+        angle_ = vector_2d_angle(
+            [(parseInt(hand_[0][0])- parseInt(hand_[2][0])), (parseInt(hand_[0][1])-parseInt(hand_[2][1]))],
+            [(parseInt(hand_[3][0])- parseInt(hand_[4][0])), (parseInt(hand_[3][1])- parseInt(hand_[4][1]))]
+        )
+        angle_list.push(angle_)
+        //#---------------------------- index 食指角度
+        angle_ = vector_2d_angle(
+            [(parseInt(hand_[0][0])-parseInt(hand_[6][0])), (parseInt(hand_[0][1])- parseInt(hand_[6][1]))],
+            [(parseInt(hand_[7][0])- parseInt(hand_[8][0])), (parseInt(hand_[7][1])- parseInt(hand_[8][1]))]
+        )
+        angle_list.push(angle_)
+        //#---------------------------- middle 中指角度
+        angle_ = vector_2d_angle(
+            [(parseInt(hand_[0][0])- parseInt(hand_[10][0])), (parseInt(hand_[0][1])- parseInt(hand_[10][1]))],
+            [(parseInt(hand_[11][0])- parseInt(hand_[12][0])), (parseInt(hand_[11][1])- parseInt(hand_[12][1]))]
+        )
+        angle_list.push(angle_)
+        //#---------------------------- ring 無名指角度
+        angle_ = vector_2d_angle(
+            [(parseInt(hand_[0][0])- parseInt(hand_[14][0])), (parseInt(hand_[0][1])- parseInt(hand_[14][1]))],
+            [(parseInt(hand_[15][0])- parseInt(hand_[16][0])), (parseInt(hand_[15][1])- parseInt(hand_[16][1]))]
+        )
+        angle_list.push(angle_)
+        //#---------------------------- pink 小拇指角度
+        angle_ = vector_2d_angle(
+            [(parseInt(hand_[0][0])- parseInt(hand_[18][0])), (parseInt(hand_[0][1])- parseInt(hand_[18][1]))],
+            [(parseInt(hand_[19][0])- parseInt(hand_[20][0])), (parseInt(hand_[19][1])- parseInt(hand_[20][1]))]
+        )
+        angle_list.push(angle_)
+        return angle_list
+    }
+
+    function hand_gesture(angle_list) {
+        let thumb = false
+        let index = false
+        let middle = false
+        let ring = false
+        let pinky = false
+        let gesture_str = null
+        if (!(angle_list.some(ele => {ele == 100000.}))) {
+            if (angle_list[0]<40) {
+                thumb = true
+            }
+            if (angle_list[1]<40) {
+                index = true
+            }
+            if (angle_list[2]<40) {
+                middle = true
+            }
+            if (angle_list[3]<40) {
+                ring = true
+            }
+            if (angle_list[4]<40) {
+                pinky = true
+            }
+            if ((thumb == false) && (index == false) && (middle == false) && (ring == false) && (pinky == false)){
+                gesture_str = "握拳"
+            }
+            if ((thumb == true) && (index == false) && (middle == false) && (ring == false) && (pinky == false)){
+                gesture_str = "讚"
+            }
+            if ((thumb == false) && (index == false) && (middle == false) && (ring == false) && (pinky == true)){
+                gesture_str = "嫩"
+            }
+            if ((thumb == false) && (index == false) && (middle == true) && (ring == false) && (pinky == false)){
+                gesture_str = "幹"
+            }
+            if ((thumb == false) && (index == true) && (middle == false) && (ring == false) && (pinky == false)){
+                gesture_str = 1
+            }
+            if ((thumb == false) && (index == true) && (middle == true) && (ring == false) && (pinky == false)){
+                gesture_str = 2
+            }
+            if ((thumb == false) && (index == true) && (middle == true) && (ring == true) && (pinky == false)){
+                gesture_str = 3
+            }
+            if ((thumb == false) && (index == true) && (middle == true) && (ring == true) && (pinky == true)){
+                gesture_str = 4
+            }
+            if ((thumb == true) && (index == true) && (middle == true) && (ring == true) && (pinky == true)){
+                gesture_str = 5
+            }
+            if ((thumb == true) && (index == false) && (middle == false) && (ring == false) && (pinky == true)){
+                gesture_str = 6
+            }
+            if ((thumb == true) && (index == true) && (middle == false) && (ring == false) && (pinky == false)){
+                gesture_str = 7
+            }
+            if ((thumb == true) && (index == true) && (middle == true) && (ring == false) && (pinky == false)){
+                gesture_str = 8
+            }
+            if ((thumb == true) && (index == true) && (middle == true) && (ring == true) && (pinky == false)){
+                gesture_str = 9
+            }
+        }
+        return gesture_str
+    }
 </script>
 <style>
     body {
         color: white;
     }
+
     .container {
         position: relative;
     }
@@ -244,5 +385,13 @@
             width: 100%;
             height: 70vh;
         }
+    }
+    #number{
+        /* position: absolute;
+        left: 400px;
+        top: 35px; */
+        font-size: 2rem;
+        font-weight: 500;
+        color: black;
     }
 </style>
